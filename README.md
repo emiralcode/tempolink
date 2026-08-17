@@ -1,5 +1,7 @@
 # SecureShare — Zaman Ayarlı ve Güvenli Web Paylaşım Portalı
 
+> **Repo:** [github.com/emiralcode/secure-share](https://github.com/emiralcode/secure-share) (private)
+
 Uçtan uca **WebRTC P2P** üzerinden, sunucudan hiçbir dosya baytının geçmediği, zaman ayarlı ve kendini imha eden bir dosya/metin paylaşım portalı. Oda durumu ve denetim (audit) kaydı **Redis**'te tutulur.
 
 ## Mimari
@@ -58,6 +60,16 @@ Veritabanı katmanı bunun yerine **oturum durumunu ve metadata'yı** profesyone
 - Docker (Redis'i `docker compose` ile çalıştırmak için) — alternatif olarak yerel bir Redis kurulumu da kullanılabilir.
 
 ## Kurulum
+
+### Hızlı başlangıç (Windows, tek dosya)
+
+Redis, sunucu ve istemciyi tek seferde, üç ayrı pencerede başlatmak için proje kökündeki [`start-all.bat`](start-all.bat) dosyasına çift tıklayın:
+
+```bash
+start-all.bat
+```
+
+`node_modules` yoksa her pencere kendi `npm install`'unu otomatik çalıştırır. Sunucu hazır olduğunda tarayıcıda `http://localhost:5173` açılır — ayrıca bkz. [`redis-portable/start-redis.bat`](redis-portable/start-redis.bat) (sadece Redis) ve aşağıdaki manuel adımlar.
 
 ### 1. Redis
 
