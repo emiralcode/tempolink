@@ -1,6 +1,6 @@
-# SecureShare — Zaman Ayarlı ve Güvenli Web Paylaşım Portalı
+# Tempolink — Zaman Ayarlı ve Güvenli Web Paylaşım Portalı
 
-> **Repo:** [github.com/emiralcode/secure-share](https://github.com/emiralcode/secure-share) (private)
+> **Repo:** [github.com/emiralcode/tempolink](https://github.com/emiralcode/tempolink) (private) · **Domain:** tempolink.net
 
 Uçtan uca **WebRTC P2P** üzerinden, sunucudan hiçbir dosya baytının geçmediği, zaman ayarlı ve kendini imha eden bir dosya/metin paylaşım portalı. Oda durumu ve denetim (audit) kaydı **Redis**'te tutulur.
 

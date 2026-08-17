@@ -1,7 +1,7 @@
 {
-  "name": "secure-share-server",
+  "name": "tempolink-server",
   "version": "1.0.0",
-  "description": "Zaman Ayarlı ve Güvenli Web Paylaşım Portalı - Signaling Server",
+  "description": "Tempolink - Zaman Ayarlı ve Güvenli Web Paylaşım Portalı - Signaling Server",
   "private": true,
   "main": "dist/index.js",
   "scripts": {

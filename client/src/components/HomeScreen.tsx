@@ -28,7 +28,7 @@ export function HomeScreen({ onCreateRoom, onJoinByCode, creating, joining, erro
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-500/10 ring-1 ring-brand-400/30">
             <ShieldCheck className="h-7 w-7 text-brand-400" />
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-white">SecureShare</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-white">Tempolink</h1>
           <p className="text-sm text-slate-400">
             Zaman ayarlı, uçtan uca P2P paylaşım. Dosyalarınız sunucudan asla geçmez.
           </p>
