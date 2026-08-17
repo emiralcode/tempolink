@@ -11,21 +11,22 @@ echo   SecureShare baslatiliyor...
 echo ============================================
 
 echo [1/3] Redis baslatiliyor...
-start "SecureShare - Redis" cmd /k "cd /d "%~dp0redis-portable" && redis-server.exe --port 6379 --notify-keyspace-events Ex"
+start "SecureShare - Redis" cmd /k call "%~dp0redis-portable\start-redis.bat"
 
 timeout /t 2 /nobreak >nul
 
 echo [2/3] Sunucu (server) baslatiliyor...
-start "SecureShare - Server" cmd /k "cd /d "%~dp0server" & if not exist node_modules npm install & npm run dev"
+start "SecureShare - Server" cmd /k call "%~dp0server\start-server.bat"
 
 timeout /t 2 /nobreak >nul
 
 echo [3/3] Istemci (client) baslatiliyor...
-start "SecureShare - Client" cmd /k "cd /d "%~dp0client" & if not exist node_modules npm install & npm run dev"
+start "SecureShare - Client" cmd /k call "%~dp0client\start-client.bat"
 
 echo.
 echo Uc pencere de acildi: Redis, Server, Client.
-echo Server hazir oldugunda tarayicida http://localhost:5173 adresini acin.
+echo Server penceresinde "[redis] baglanti kuruldu" satirini gorunce
+echo tarayicida http://localhost:5173 adresini acin.
 echo Bu pencereyi kapatabilirsiniz; diger uc pencere calismaya devam eder.
 echo.
 pause
