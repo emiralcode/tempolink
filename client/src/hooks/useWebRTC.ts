@@ -7,6 +7,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   ServerToClientEvents,
   SignalData,
+  TransferEventKind,
   TransferRecord,
 } from '../types';
 
@@ -82,6 +83,24 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
   const incomingOffersRef = useRef<Map<string, IncomingOfferMeta>>(new Map());
   const receivingStateRef = useRef<ReceivingState | null>(null);
 
+  const socketRef = useRef(socket);
+  socketRef.current = socket;
+  const roomIdRef = useRef(roomId);
+  roomIdRef.current = roomId;
+
+  // Fire-and-forget audit telemetry: metadata only (name/size/status), never file
+  // bytes. Lets the server's Redis-backed audit log record that a transfer happened
+  // without the server ever participating in the actual P2P data path.
+  const emitTransferEvent = useCallback(
+    (event: TransferEventKind, payload: { transferId: string; direction: 'send' | 'receive'; fileName: string; fileSize: number; errorMessage?: string }) => {
+      const currentSocket = socketRef.current;
+      const currentRoomId = roomIdRef.current;
+      if (!currentSocket || !currentRoomId) return;
+      currentSocket.emit('transfer-event', { roomId: currentRoomId, event, ...payload });
+    },
+    []
+  );
+
   const addTransfer = useCallback((record: TransferRecord) => {
     setTransfers((prev) => [...prev, record]);
   }, []);
@@ -107,7 +126,8 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
       size: file.size,
       mime: file.type || 'application/octet-stream',
     });
-  }, [updateTransfer]);
+    emitTransferEvent('offered', { transferId: nextId, direction: 'send', fileName: file.name, fileSize: file.size });
+  }, [updateTransfer, emitTransferEvent]);
 
   const beginSendingFile = useCallback(
     async (id: string) => {
@@ -129,6 +149,13 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
           }
           if (dc.readyState !== 'open') {
             updateTransfer(id, { status: 'error', errorMessage: 'Bağlantı kesildi.' });
+            emitTransferEvent('error', {
+              transferId: id,
+              direction: 'send',
+              fileName: file.name,
+              fileSize: file.size,
+              errorMessage: 'Bağlantı kesildi.',
+            });
             return;
           }
           if (dc.bufferedAmount > BUFFERED_AMOUNT_THRESHOLD) {
@@ -150,13 +177,14 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
           }
         }
         updateTransfer(id, { status: 'completed', progressBytes: file.size, speedBytesPerSec: 0 });
+        emitTransferEvent('completed', { transferId: id, direction: 'send', fileName: file.name, fileSize: file.size });
       } finally {
         outgoingFilesRef.current.delete(id);
         activeOutgoingIdRef.current = null;
         processSendQueue();
       }
     },
-    [updateTransfer, processSendQueue]
+    [updateTransfer, processSendQueue, emitTransferEvent]
   );
 
   const handleBinaryChunk = useCallback(
@@ -187,9 +215,10 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
         });
         incomingOffersRef.current.delete(receiving.id);
         receivingStateRef.current = null;
+        emitTransferEvent('completed', { transferId: receiving.id, direction: 'receive', fileName: receiving.name, fileSize: receiving.size });
       }
     },
-    [updateTransfer]
+    [updateTransfer, emitTransferEvent]
   );
 
   const handleControlMessage = useCallback(
@@ -211,6 +240,13 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
               speedBytesPerSec: 0,
               errorMessage: 'Dosya 100MB sınırını aşıyor, otomatik olarak reddedildi.',
             });
+            emitTransferEvent('rejected', {
+              transferId: msg.id,
+              direction: 'receive',
+              fileName: msg.name,
+              fileSize: msg.size,
+              errorMessage: 'Dosya 100MB sınırını aşıyor.',
+            });
             return;
           }
           incomingOffersRef.current.set(msg.id, { name: msg.name, size: msg.size, mime: msg.mime });
@@ -225,6 +261,7 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
             speedBytesPerSec: 0,
           });
           setIncomingRequestId(msg.id);
+          emitTransferEvent('offered', { transferId: msg.id, direction: 'receive', fileName: msg.name, fileSize: msg.size });
           return;
         }
         case 'file-accept': {
@@ -233,21 +270,31 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
           return;
         }
         case 'file-reject': {
+          const file = outgoingFilesRef.current.get(msg.id);
           updateTransfer(msg.id, { status: 'rejected' });
           outgoingFilesRef.current.delete(msg.id);
           if (activeOutgoingIdRef.current === msg.id) {
             activeOutgoingIdRef.current = null;
             processSendQueue();
           }
+          if (file) {
+            emitTransferEvent('rejected', { transferId: msg.id, direction: 'send', fileName: file.name, fileSize: file.size });
+          }
           return;
         }
         case 'file-cancel': {
           updateTransfer(msg.id, { status: 'cancelled' });
-          if (receivingStateRef.current?.id === msg.id) {
+          const receiving = receivingStateRef.current;
+          if (receiving?.id === msg.id) {
             receivingStateRef.current = null;
+            emitTransferEvent('cancelled', { transferId: msg.id, direction: 'receive', fileName: receiving.name, fileSize: receiving.size });
           }
           if (activeOutgoingIdRef.current === msg.id) {
+            const file = outgoingFilesRef.current.get(msg.id);
             cancelledIdsRef.current.add(msg.id);
+            if (file) {
+              emitTransferEvent('cancelled', { transferId: msg.id, direction: 'send', fileName: file.name, fileSize: file.size });
+            }
           }
           return;
         }
@@ -259,7 +306,7 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
           return;
       }
     },
-    [addTransfer, updateTransfer, beginSendingFile, processSendQueue]
+    [addTransfer, updateTransfer, beginSendingFile, processSendQueue, emitTransferEvent]
   );
 
   // --- Peer connection lifecycle: created once per (roomId, isInitiator) session ---
@@ -380,6 +427,13 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
             speedBytesPerSec: 0,
             errorMessage: 'Dosya 100MB sınırını aşıyor.',
           });
+          emitTransferEvent('error', {
+            transferId: id,
+            direction: 'send',
+            fileName: file.name,
+            fileSize: file.size,
+            errorMessage: 'Dosya 100MB sınırını aşıyor.',
+          });
           continue;
         }
         addTransfer({
@@ -397,7 +451,7 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
       }
       processSendQueue();
     },
-    [addTransfer, processSendQueue]
+    [addTransfer, processSendQueue, emitTransferEvent]
   );
 
   const sendText = useCallback((text: string) => {
@@ -429,36 +483,50 @@ export function useWebRTC({ socket, roomId, isInitiator, enabled }: UseWebRTCPar
       updateTransfer(id, { status: 'transferring' });
       sendControl(dc, { kind: 'file-accept', id });
       setIncomingRequestId((current) => (current === id ? null : current));
+      emitTransferEvent('accepted', { transferId: id, direction: 'receive', fileName: meta.name, fileSize: meta.size });
     },
-    [updateTransfer]
+    [updateTransfer, emitTransferEvent]
   );
 
   const rejectTransfer = useCallback(
     (id: string) => {
       const dc = dcRef.current;
+      const meta = incomingOffersRef.current.get(id);
       updateTransfer(id, { status: 'rejected' });
       incomingOffersRef.current.delete(id);
       if (dc && dc.readyState === 'open') sendControl(dc, { kind: 'file-reject', id });
       setIncomingRequestId((current) => (current === id ? null : current));
+      if (meta) {
+        emitTransferEvent('rejected', { transferId: id, direction: 'receive', fileName: meta.name, fileSize: meta.size });
+      }
     },
-    [updateTransfer]
+    [updateTransfer, emitTransferEvent]
   );
 
   const cancelTransfer = useCallback(
     (id: string) => {
       const dc = dcRef.current;
+      const outgoingFile = outgoingFilesRef.current.get(id);
+      const receiving = receivingStateRef.current?.id === id ? receivingStateRef.current : null;
+
       if (activeOutgoingIdRef.current === id) {
         cancelledIdsRef.current.add(id);
       }
-      if (receivingStateRef.current?.id === id) {
+      if (receiving) {
         receivingStateRef.current = null;
       }
       outgoingFilesRef.current.delete(id);
       outgoingQueueRef.current = outgoingQueueRef.current.filter((x) => x !== id);
       updateTransfer(id, { status: 'cancelled' });
       if (dc && dc.readyState === 'open') sendControl(dc, { kind: 'file-cancel', id });
+
+      if (outgoingFile) {
+        emitTransferEvent('cancelled', { transferId: id, direction: 'send', fileName: outgoingFile.name, fileSize: outgoingFile.size });
+      } else if (receiving) {
+        emitTransferEvent('cancelled', { transferId: id, direction: 'receive', fileName: receiving.name, fileSize: receiving.size });
+      }
     },
-    [updateTransfer]
+    [updateTransfer, emitTransferEvent]
   );
 
   const incomingRequest = useMemo(

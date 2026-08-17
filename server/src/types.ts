@@ -58,6 +58,22 @@ export interface SignalPayload {
   data: SignalData;
 }
 
+// Fire-and-forget telemetry describing a P2P transfer's lifecycle — metadata only
+// (name/size/status), emitted purely so the server's audit log can record that a
+// transfer happened. The file/text bytes themselves never take this path; they flow
+// exclusively over the WebRTC RTCDataChannel between the two peers.
+export type TransferEventKind = 'offered' | 'accepted' | 'rejected' | 'cancelled' | 'completed' | 'error';
+
+export interface TransferEventPayload {
+  roomId: string;
+  transferId: string;
+  event: TransferEventKind;
+  direction: 'send' | 'receive';
+  fileName: string;
+  fileSize: number;
+  errorMessage?: string;
+}
+
 export interface ServerToClientEvents {
   'peer-joined': () => void;
   'peer-disconnected': () => void;
@@ -77,4 +93,5 @@ export interface ClientToServerEvents {
   ) => void;
   signal: (payload: SignalPayload) => void;
   'leave-room': (payload: { roomId: string }) => void;
+  'transfer-event': (payload: TransferEventPayload) => void;
 }

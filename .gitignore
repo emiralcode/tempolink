@@ -3,3 +3,12 @@ dist/
 .env
 *.log
 *.tsbuildinfo
+client/vite.config.js
+client/vite.config.d.ts
+
+# Taşınabilir Redis ikili dosyaları (redis-portable/start-redis.bat ile indirilir/kullanılır) — büyük binary, repoya girmemeli.
+redis-portable/*.exe
+redis-portable/*.dll
+redis-portable/*.pdb
+redis-portable/dump.rdb
+redis-portable/appendonlydir/

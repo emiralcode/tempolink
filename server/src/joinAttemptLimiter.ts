@@ -1,33 +1,27 @@
-interface AttemptWindow {
-  count: number;
-  windowStart: number;
-}
+import type { Redis } from 'ioredis';
+import { joinAttemptsKey } from './redisKeys';
 
-const WINDOW_MS = 60_000;
+const WINDOW_SECONDS = 60;
 const MAX_ATTEMPTS_PER_WINDOW = 5;
 
 /**
- * Guards the 6-digit shortCode join path against brute-force guessing.
- * Tracked per socket connection; a fresh connection gets a fresh window,
- * so this is combined with the caller disconnecting offending sockets.
+ * Guards the 6-digit shortCode join path against brute-force guessing, using the
+ * standard Redis INCR+EXPIRE counter pattern: the first failure in a window opens a
+ * fresh TTL, subsequent failures just increment — no separate cleanup job needed.
  */
 export class JoinAttemptLimiter {
-  private attempts = new Map<string, AttemptWindow>();
+  constructor(private readonly redis: Redis) {}
 
-  registerFailure(socketId: string): { exceeded: boolean } {
-    const now = Date.now();
-    const existing = this.attempts.get(socketId);
-
-    if (!existing || now - existing.windowStart > WINDOW_MS) {
-      this.attempts.set(socketId, { count: 1, windowStart: now });
-      return { exceeded: false };
+  async registerFailure(socketId: string): Promise<{ exceeded: boolean }> {
+    const key = joinAttemptsKey(socketId);
+    const count = await this.redis.incr(key);
+    if (count === 1) {
+      await this.redis.expire(key, WINDOW_SECONDS);
     }
-
-    existing.count += 1;
-    return { exceeded: existing.count > MAX_ATTEMPTS_PER_WINDOW };
+    return { exceeded: count > MAX_ATTEMPTS_PER_WINDOW };
   }
 
-  clear(socketId: string): void {
-    this.attempts.delete(socketId);
+  async clear(socketId: string): Promise<void> {
+    await this.redis.del(joinAttemptsKey(socketId));
   }
 }
